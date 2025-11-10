@@ -1,0 +1,383 @@
+<!-- Roster.html — simplified filters (State/Payer only), relative fetch, meta display, payer normalization -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>MedSync NP Router — Roster</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = { theme: { extend: { colors: { primary:'#3b82f6', secondary:'#10b981' } } } }
+  </script>
+  <script src="https://unpkg.com/feather-icons"></script>
+  <style>
+    #vanta-bg{position:fixed;inset:0;z-index:-1;opacity:.15}
+    .badge{
+      display:inline-flex;align-items:center;padding:0 .5rem;border-radius:.375rem;
+      font-size:.75rem;line-height:1.25rem;background:#f3f4f6;color:#374151;
+    }
+    .chip{
+      display:inline-flex;align-items:center;padding:.125rem .5rem;border-radius:9999px;
+      font-size:.75rem;line-height:1.25rem;background:#eff6ff;color:#1d4ed8;
+      margin-right:.25rem;margin-bottom:.25rem;
+    }
+    th.sortable{cursor:pointer}.dir{opacity:.35}.active{color:#111827}
+  </style>
+</head>
+<body class="bg-gray-50">
+  <div id="vanta-bg"></div>
+
+  <!-- NAV -->
+  <nav class="bg-white shadow-sm">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex justify-between h-16">
+        <div class="flex items-center space-x-6">
+          <div class="flex items-center font-bold text-xl">
+            <i data-feather="users" class="mr-2 text-primary"></i> MedSync NP Router
+          </div>
+          <div class="hidden sm:flex sm:space-x-8">
+            <a href="index.html" class="border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">Finder</a>
+            <a href="roster.html" class="border-primary text-gray-900 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">Roster</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <!-- Meta / warning -->
+    <div id="warn" class="hidden mb-4 rounded-md bg-yellow-50 p-4">
+      <div class="flex">
+        <div class="flex-shrink-0"><i data-feather="alert-triangle" class="text-yellow-600"></i></div>
+        <div class="ml-3">
+          <h3 class="text-sm font-medium text-yellow-800">Using sample data</h3>
+          <div class="mt-2 text-sm text-yellow-700">
+            Couldn’t load <code>data/np_roster.json</code>. Running with a small sample dataset.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stats + meta -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-2" id="stats"></div>
+    <div id="meta" class="text-xs text-gray-500 mb-4"></div>
+
+    <!-- Filters (state + payer + search + in-net) -->
+    <div class="bg-white shadow rounded-lg p-4 mb-6">
+      <div class="flex flex-wrap gap-3 items-end">
+        <div>
+          <label class="block text-sm font-medium text-gray-700">States</label>
+          <div id="stateFilter" class="flex flex-wrap gap-2 mt-1"></div>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700">Payers</label>
+          <div id="payerFilter" class="flex flex-wrap gap-2 mt-1"></div>
+        </div>
+        <div class="flex-1 min-w-[220px]">
+          <label class="block text-sm font-medium text-gray-700">Search</label>
+          <input id="search" type="text" placeholder="Name, email, or NPI" class="mt-1 w-full rounded-md border-gray-300 focus:ring-primary focus:border-primary">
+        </div>
+        <div class="flex items-center space-x-2">
+          <input id="inNet" type="checkbox" class="rounded border-gray-300 text-primary focus:ring-primary">
+          <label for="inNet" class="text-sm text-gray-700">In-network confirmed only</label>
+        </div>
+        <div class="ml-auto flex items-center space-x-3">
+          <button id="clearFilters" class="text-sm text-gray-600 hover:text-gray-900 underline">Clear all</button>
+          <div class="text-sm text-gray-500" id="countLabel">Showing 0 providers</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Table -->
+    <div class="bg-white shadow rounded-lg overflow-x-auto">
+      <table class="min-w-full divide-y divide-gray-200">
+        <thead class="bg-gray-50">
+          <tr>
+            <th data-key="lastUpdated" class="sortable px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Updated <span class="dir">↕</span></th>
+            <th data-key="name" class="sortable px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name <span class="dir">↕</span></th>
+            <th data-key="statesCount" class="sortable px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">States <span class="dir">↕</span></th>
+            <th data-key="personalNPI" class="sortable px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Personal NPI <span class="dir">↕</span></th>
+            <th data-key="payersCount" class="sortable px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Payers <span class="dir">↕</span></th>
+            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
+            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Mobile</th>
+            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Availability</th>
+            <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="tbody" class="bg-white divide-y divide-gray-200"></tbody>
+      </table>
+      <div id="empty" class="hidden p-6 text-center text-gray-500">No matches. Adjust filters.</div>
+    </div>
+
+    <!-- Pagination -->
+    <div class="mt-3 flex items-center justify-between">
+      <div id="rangeLabel" class="text-sm text-gray-600"></div>
+      <div class="space-x-2">
+        <button id="prevPage" class="px-3 py-1.5 bg-white border border-gray-300 rounded-md text-sm disabled:opacity-50">Prev</button>
+        <button id="nextPage" class="px-3 py-1.5 bg-white border border-gray-300 rounded-md text-sm disabled:opacity-50">Next</button>
+        <label class="text-sm text-gray-600 ml-2">Rows</label>
+        <select id="pageSize" class="rounded-md border-gray-300 focus:ring-primary focus:border-primary text-sm">
+          <option>10</option><option selected>25</option><option>50</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- See-all modal -->
+    <div id="seeAllModal" class="fixed inset-0 hidden items-center justify-center bg-black/30 z-50">
+      <div class="bg-white rounded-lg shadow-lg max-w-lg w-full p-4">
+        <div class="flex items-center justify-between mb-2">
+          <h3 class="text-lg font-semibold">All payers</h3>
+          <button id="closeSeeAll" class="text-gray-500 hover:text-gray-900">&times;</button>
+        </div>
+        <div id="seeAllBody" class="text-sm text-gray-900"></div>
+      </div>
+    </div>
+  </main>
+
+  <footer class="bg-white mt-12">
+    <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8 text-center text-gray-500 text-sm">
+      &copy; 2025 MedSync NP Router.
+    </div>
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/vanta@latest/dist/vanta.globe.min.js"></script>
+  <script>
+    try{ VANTA.GLOBE({ el:"#vanta-bg", mouseControls:true, touchControls:true, color:"#3b82f6", backgroundColor:"#f8fafc", size:.8 }); }catch(e){}
+    feather.replace();
+
+    // Canonical payers + normalization
+    const CANON_PAYERS = ["Medicare","Medicaid","Aetna","UHC","BCBS","Cigna","Humana","TRICARE"];
+    const NORMALIZE = {
+      "unitedhealthcare":"UHC", "united healthcare":"UHC", "united health care":"UHC", "optum":"UHC", "uhc":"UHC",
+      "blue cross blue shield":"BCBS", "blue cross blue shield / anthem":"BCBS", "anthem":"BCBS", "bcbs":"BCBS",
+      "cigna":"Cigna", "cigna / evernorth":"Cigna", "evernorth":"Cigna",
+      "medicare":"Medicare", "medicaid":"Medicaid", "aetna":"Aetna",
+      "humana":"Humana", "tricare":"TRICARE"
+    };
+
+    const normKey = s => s?.toString().trim().toLowerCase();
+    const normPayer = p => {
+      const k = normKey(p);
+      return NORMALIZE[k] || (p?.toString().trim() || "");
+    };
+
+    function parseOther(s){
+      if(!s) return [];
+      return String(s).split(/[,;]\s*/).map(t=>t.trim()).filter(Boolean);
+    }
+    function allPayersOf(x){
+      const majors = x.payers || [];
+      const others = x.otherPayers || [];
+      const seen = new Set();
+      return [...majors, ...others].filter(p=> (p && !seen.has(p) && seen.add(p)));
+    }
+
+    // Utils
+    const qs=(s,p=document)=>p.querySelector(s), qsa=(s,p=document)=>Array.from(p.querySelectorAll(s));
+    const uniq=arr=>Array.from(new Set(arr));
+    const copy=async t=>{ try{ await navigator.clipboard.writeText(t); alert('Copied'); }catch{ prompt('Copy', t); } };
+
+    // State
+    let ALL=[], filtered=[];
+    let sortKey='lastUpdated', sortDir='desc';
+    let page=1;
+    const filters={ states:[], payers:[], search:'', inNet:false };
+    const META={ rosterVersion:null, generatedAt:null };
+
+    // Data load (relative path!)
+    async function loadData(){
+      try{
+        const res = await fetch('data/np_roster.json', {cache:'no-store'});
+        const raw = await res.json();
+        const providers = Array.isArray(raw)? raw : (raw.providers||[]);
+        META.rosterVersion = raw.rosterVersion || null;
+        META.generatedAt   = raw.generatedAt   || null;
+
+        ALL = providers.map(x=>{
+          const states = (x.states||[]).filter(Boolean);
+          const payers = (x.payers||[]).map(p=>normPayer(p)).filter(Boolean);
+          const other  = Array.isArray(x.otherPayers) ? x.otherPayers : parseOther(x.otherPayersNote);
+          const name = [x.firstName||'', x.lastName||''].join(' ').trim();
+          return {
+            id: x.id || (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2)),
+            firstName:x.firstName||'', lastName:x.lastName||'',
+            email:x.email||'', mobile:x.mobile||'',
+            states, personalNPI:x.personalNPI||'',
+            payers, otherPayers:(other||[]).filter(Boolean),
+            availability:x.availability||'',
+            inNetworkConfirmed: !!x.inNetworkConfirmed,
+            name, statesCount: states.length, payersCount: payers.length + (other?other.length:0),
+            lastUpdated: x.lastUpdated ? Date.parse(x.lastUpdated) : 0
+          };
+        });
+      }catch(e){
+        qs('#warn').classList.remove('hidden');
+        ALL = [
+          {"id":"uuid-1","firstName":"Ellen","lastName":"Neylon","email":"ellen.neylon@gmail.com","mobile":"(646) 338-5975","states":["NV","NY"],"personalNPI":"1234567890","payers":["Medicare","Aetna","UHC","BCBS"],"availability":"Weekdays AM","inNetworkConfirmed":true},
+          {"id":"uuid-2","firstName":"Sophia","lastName":"Cabrera","email":"sdcabrera85@gmail.com","mobile":"(702) 339-2915","states":["NV"],"personalNPI":"2345678901","payers":["UHC","Cigna"],"availability":"Flexible","inNetworkConfirmed":true},
+          {"id":"uuid-3","firstName":"Anthony","lastName":"Opimo","email":"aopimo@me.com","mobile":"(702) 849-2504","states":["NV"],"personalNPI":"3456789012","payers":["Medicare","BCBS"],"availability":"Weekdays PM","inNetworkConfirmed":true},
+          {"id":"uuid-4","firstName":"David","lastName":"Preston","email":"davidprestonarnp@gmail.com","mobile":"(727) 804-3360","states":["FL"],"personalNPI":"4567890123","payers":["Medicare","Aetna","Cigna"],"availability":"Mid-day","inNetworkConfirmed":true}
+        ];
+      }
+    }
+
+    function renderMeta(){
+      const m = qs('#meta');
+      const ver = META.rosterVersion ? `v${META.rosterVersion}` : '';
+      const ts  = META.generatedAt ? new Date(META.generatedAt).toLocaleString() : '';
+      m.textContent = ver || ts ? `Last updated ${ts || ''} ${ver ? `(${ver})` : ''}` : '';
+    }
+
+    function hydrateChips(){
+      const states = uniq(ALL.flatMap(x=>x.states)).sort();
+      const payers = uniq(ALL.flatMap(x=>x.payers)).sort();
+      const make=(label, group)=>{
+        const b=document.createElement('button');
+        b.className='chip'; b.textContent=label; b.dataset.value=label; b.dataset.group=group;
+        b.onclick=()=>{
+          const arr=filters[group];
+          const i=arr.indexOf(label);
+          (i>=0?arr.splice(i,1):arr.push(label));
+          renderChipState(); page=1; apply();
+        };
+        return b;
+      };
+      const sf=qs('#stateFilter'); const pf=qs('#payerFilter'); sf.innerHTML=''; pf.innerHTML='';
+      states.forEach(s=>sf.appendChild(make(s,'states')));
+      payers.forEach(p=>pf.appendChild(make(p,'payers')));
+      renderChipState();
+    }
+
+    function renderChipState(){
+      ['stateFilter','payerFilter'].forEach(id=>{
+        qsa('#'+id+' .chip').forEach(el=>{
+          const val=el.dataset.value, group=el.dataset.group;
+          el.classList.toggle('ring-2', filters[group].includes(val));
+          el.classList.toggle('ring-primary', filters[group].includes(val));
+        });
+      });
+    }
+
+    function apply(){
+      const s = filters.search.toLowerCase().trim();
+      filtered = ALL.filter(x=>{
+        if(filters.inNet && !x.inNetworkConfirmed) return false;
+        if(filters.states.length && !filters.states.some(st=>x.states.includes(st))) return false;
+        if(filters.payers.length && !filters.payers.some(py=>x.payers.includes(py))) return false;
+        if(s && !(x.name.toLowerCase().includes(s) || x.email.toLowerCase().includes(s) || String(x.personalNPI).includes(s))) return false;
+        return true;
+      }).sort((a,b)=>{
+        const A = a[sortKey], B = b[sortKey];
+        if(A<B) return sortDir==='asc'?-1:1;
+        if(A>B) return sortDir==='asc'? 1:-1;
+        return (a.lastName||'').localeCompare(b.lastName||'');
+      });
+
+      // keep page in range after filters change
+      const ps=parseInt(qs('#pageSize').value,10);
+      const max=Math.max(1, Math.ceil(filtered.length/ps));
+      if(page>max) page=max;
+
+      qs('#countLabel').textContent=`Showing ${filtered.length} provider${filtered.length===1?'':'s'}`;
+      renderStats();
+      renderTable();
+    }
+
+    function renderStats(){
+      const total = ALL.length;
+      const st = uniq(ALL.flatMap(x=>x.states)).length;
+      const py = uniq(ALL.flatMap(x=>x.payers)).length;
+      const wrap = qs('#stats'); wrap.innerHTML='';
+      [{label:'Total Providers',value:total},{label:'States Covered',value:st},{label:'Unique Payers',value:py},{label:'In-Network',value:ALL.filter(x=>x.inNetworkConfirmed).length}]
+      .forEach(c=>{
+        const d=document.createElement('div'); d.className='bg-white shadow rounded-lg p-4';
+        d.innerHTML=`<div class="text-sm text-gray-500">${c.label}</div><div class="text-2xl font-semibold">${c.value}</div>`;
+        wrap.appendChild(d);
+      });
+    }
+
+    function renderTable(){
+      const tbody = qs('#tbody'); tbody.innerHTML='';
+      const empty = qs('#empty');
+      const pageSize = parseInt(qs('#pageSize').value,10);
+      const start = (page-1)*pageSize;
+      const rows = filtered.slice(start, start+pageSize);
+
+      if(filtered.length===0){ empty.classList.remove('hidden'); qs('#rangeLabel').textContent=''; return; }
+      empty.classList.add('hidden');
+
+      rows.forEach(x=>{
+        const tr=document.createElement('tr'); tr.className='hover:bg-gray-50';
+        tr.innerHTML = `
+          <td class="px-6 py-3 text-sm text-gray-600">${x.lastUpdated? new Date(x.lastUpdated).toLocaleDateString() : '—'}</td>
+          <td class="px-6 py-3">
+            <div class="font-medium text-gray-900">${x.firstName} ${x.lastName}</div>
+            <div class="text-xs text-gray-500">${x.inNetworkConfirmed?'<span class="text-green-700">In-network</span>':'<span class="text-yellow-700">Unconfirmed</span>'}</div>
+          </td>
+          <td class="px-6 py-3">${x.states.map(s=>`<span class="badge mr-1">${s}</span>`).join('')}</td>
+          <td class="px-6 py-3 font-mono">${x.personalNPI}</td>
+          <td class="px-6 py-3">
+            ${x.payers.map(p=>`<span class="badge mr-1">${p}</span>`).join('')}
+            ${x.otherPayers && x.otherPayers.length ? 
+              `<button class="text-xs underline ml-1" data-seeall="${x.id}">(+${x.otherPayers.length} more)</button>` : ``}
+          </td>
+          <td class="px-6 py-3">${x.email}</td>
+          <td class="px-6 py-3">${x.mobile||''}</td>
+          <td class="px-6 py-3">${x.availability||''}</td>
+          <td class="px-6 py-3 text-right space-x-2">
+            <button class="px-2 py-1 border rounded text-sm" data-copy="${x.personalNPI}">Copy NPI</button>
+            <button class="px-2 py-1 border rounded text-sm" data-copy="${x.email}">Copy Email</button>
+          </td>`;
+        tbody.appendChild(tr);
+      });
+      feather.replace();
+
+      // copy actions
+      qsa('[data-copy]').forEach(b=>b.addEventListener('click', e=>{ e.stopPropagation(); copy(e.currentTarget.dataset.copy); }));
+
+      const total = filtered.length;
+      const end = Math.min(start+pageSize, total);
+      qs('#rangeLabel').textContent = `${total? start+1:0}-${end} of ${total}`;
+      qs('#prevPage').disabled = page===1;
+      qs('#nextPage').disabled = end>=total;
+
+      // header sort toggles
+      qsa('th.sortable').forEach(th=>{
+        th.classList.toggle('active', th.dataset.key===sortKey);
+        th.onclick=()=>{ const key=th.dataset.key; if(sortKey===key){sortDir=(sortDir==='asc'?'desc':'asc');} else {sortKey=key;sortDir='asc';} apply(); };
+      });
+    }
+
+    // Global click handlers (wired once) — moved OUT of the table template
+    document.addEventListener('click', (e)=>{
+      const btn = e.target.closest('[data-seeall]');
+      if(btn){
+        const id = btn.getAttribute('data-seeall');
+        const item = ALL.find(p=>p.id===id);
+        if(item){
+          qs('#seeAllBody').innerHTML = allPayersOf(item).map(p=>`<span class="badge mr-1 mb-1">${p}</span>`).join('');
+          const m = qs('#seeAllModal'); m.classList.remove('hidden'); m.classList.add('flex');
+        }
+      }
+      if(e.target.id==='closeSeeAll' || e.target.id==='seeAllModal'){ 
+        const m = qs('#seeAllModal'); m.classList.add('hidden'); m.classList.remove('flex');
+      }
+    });
+
+    // Events
+    qs('#search').addEventListener('input', e=>{ filters.search=e.target.value; page=1; apply(); });
+    qs('#inNet').addEventListener('change', e=>{ filters.inNet = e.target.checked; page=1; apply(); });
+    qs('#clearFilters').addEventListener('click', ()=>{ filters.states=[]; filters.payers=[]; filters.search=''; filters.inNet=false; qs('#search').value=''; qsa('.chip').forEach(c=>c.classList.remove('ring-2','ring-primary')); page=1; apply(); });
+    qs('#prevPage').addEventListener('click', ()=>{ page=Math.max(1,page-1); renderTable(); });
+    qs('#nextPage').addEventListener('click', ()=>{ const total=filtered.length, ps=parseInt(qs('#pageSize').value,10); const max=Math.max(1,Math.ceil(total/ps)); page=Math.min(max,page+1); renderTable(); });
+    qs('#pageSize').addEventListener('change', ()=>{ page=1; renderTable(); });
+
+    (async function init(){
+      await loadData();
+      renderMeta();
+      hydrateChips();
+      apply();
+    })();
+  </script>
+</body>
+</html>
